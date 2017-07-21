@@ -4,6 +4,7 @@ object Dependencies {
   val akkaV = "2.5.1"
   val akkaHttpV = "10.0.6"
   val jacksonV = "2.8.7"
+  val googleV = "1.22.0"
 
   val rootDependencies = Seq(
     // proactively pull in latest versions of Jackson libs, instead of relying on the versions
@@ -11,6 +12,9 @@ object Dependencies {
     "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonV,
     "com.fasterxml.jackson.core" % "jackson-databind" % jacksonV,
     "com.fasterxml.jackson.core" % "jackson-core" % jacksonV,
+
+    "com.google.api-client"  % "google-api-client"                         % googleV,
+    "com.google.apis"        % "google-api-services-dataproc"          % ("v1-rev53-" + googleV),
 
     "ch.qos.logback" % "logback-classic" % "1.2.1",
     "com.getsentry.raven" % "raven-logback" % "7.8.6",

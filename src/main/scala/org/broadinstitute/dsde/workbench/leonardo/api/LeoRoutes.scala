@@ -13,6 +13,11 @@ import akka.http.scaladsl.server.RouteResult.Complete
 import akka.http.scaladsl.server.directives.{DebuggingDirectives, LogEntry, LoggingMagnet}
 import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
+import com.google.api.client.auth.oauth2.Credential
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
+import com.google.api.client.json.jackson2.JacksonFactory
+import com.google.api.services.dataproc._
+import com.google.api.services.dataproc.model.Cluster
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dsde.workbench.leonardo.model.ErrorReport
 
@@ -74,4 +79,15 @@ class LeoRoutes()(implicit val system: ActorSystem, val materializer: Materializ
 
   def statusCodeCreated[T](response: T): (StatusCode, T) = (StatusCodes.Created, response)
 
+  def getDataprocServiceAccountCredential: Credential = ???
+
+  def things(): Unit = {
+    val httpTransport = GoogleNetHttpTransport.newTrustedTransport
+    val jsonFactory = JacksonFactory.getDefaultInstance
+    val appName = "leonardo"
+    val dataprocApi: Dataproc = new Dataproc.Builder(httpTransport, jsonFactory, getDataprocServiceAccountCredential).setApplicationName(appName).build()
+
+    val cluster = new Cluster()
+    val request = dataprocApi.projects().regions().clusters().create("firecloud-foo", "us-central-1a", cluster)
+  }
 }
