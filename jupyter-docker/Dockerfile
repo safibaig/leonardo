@@ -22,7 +22,6 @@ ENV SPARK_HOME /spark/spark-$SPARK_VER
 # result of `gsutil cat gs://hail-common/builds/0.1/latest-hash-spark-2.0.2.txt` on 22 September 2017
 ENV HAILHASH 6f8598516c88
 ENV HAILJAR hail-0.1-$HAILHASH-Spark-$SPARK_VER.jar
-ENV HAILPYTHON hail-0.1-$HAILHASH.zip
 ENV HAILZIP Hail-0.1-$HAILHASH-Spark-$SPARK_VER.zip
 ENV HAIL_HOME /hail
 
@@ -31,7 +30,7 @@ ENV HAIL_HOME /hail
 ENV HADOOP_CONF_DIR /etc/hadoop/conf
 
 ENV PATH $SPARK_HOME:$SPARK_HOME/python:$SPARK_HOME/bin:$HAIL_HOME:$PATH
-ENV PYTHONPATH $PYTHONPATH:$HAIL_HOME/$HAILPYTHON:$HAIL_HOME/python:$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.3-src.zip
+ENV PYTHONPATH $PYTHONPATH:$HAIL_HOME/$HAILZIP:$HAIL_HOME/python:$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.3-src.zip
 
 ENV USER jupyter-user
 ENV UID 1000
@@ -82,7 +81,6 @@ RUN echo "deb $DEBIAN_REPO/debian jessie main\ndeb $DEBIAN_REPO/debian-security 
  # Hail
  && mkdir $HAIL_HOME && cd $HAIL_HOME \
  && wget http://storage.googleapis.com/hail-common/builds/0.1/jars/$HAILJAR \
- && wget http://storage.googleapis.com/hail-common/builds/0.1/python/$HAILPYTHON \
  && wget http://storage.googleapis.com/hail-common/distributions/0.1/$HAILZIP \
  && cd - \
 
@@ -107,12 +105,23 @@ RUN echo "deb $DEBIAN_REPO/debian jessie main\ndeb $DEBIAN_REPO/debian-security 
  && pip install fastinterval \
  && pip install matplotlib-venn
 
-
 ADD spark-defaults.conf.template $SPARK_HOME/conf/
 # Spark defaults conf find and replace [HAILHASH] with the hash
 RUN sed "s|\[HAILHASH\]|$HAILHASH|g" $SPARK_HOME/conf/spark-defaults.conf.template > $SPARK_HOME/conf/spark-defaults.conf
 ADD jupyter_notebook_config.py $JUPYTER_HOME
 RUN chown -R $USER:users $JUPYTER_HOME
+
+
+
+# Joel's reordering hack, used to build broadinstitute/leonardo-notebooks:gawb-2613-3
+
+ENV HAILPYTHON hail-0.1-$HAILHASH.zip
+ENV PYTHONPATH $PYTHONPATH:$HAIL_HOME/$HAILPYTHON:$HAIL_HOME/python:$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.3-src.zip
+RUN cd $HAIL_HOME && wget http://storage.googleapis.com/hail-common/builds/0.1/python/$HAILPYTHON && cd -
+
+
+
+
 
 USER $USER
 WORKDIR $HOME
