@@ -65,7 +65,6 @@ object ClusterStatus extends Enumeration {
   }
 }
 
-
 object Cluster {
    def create(googleProject: GoogleProject, clusterName: ClusterName, labels: LabelMap, googleServiceAccount: GoogleServiceAccount, gcsBucketName: GcsBucketName, jupyterExtensionUri: Option[GcsPath], googleId: UUID, operationName: OperationName): Cluster = {
      Cluster(

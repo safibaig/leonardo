@@ -12,7 +12,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl._
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dsde.workbench.leonardo.config.SwaggerConfig
-import org.broadinstitute.dsde.workbench.leonardo.errorReportSource
+import org.broadinstitute.dsde.workbench.leonardo.{HttpResult, errorReportSource}
 import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterName, ClusterRequest, GoogleProject, LeoException}
 import org.broadinstitute.dsde.workbench.leonardo.model.LeonardoJsonSupport._
 import org.broadinstitute.dsde.workbench.leonardo.service.{LeonardoService, ProxyService}
@@ -39,9 +39,8 @@ class LeoRoutes(val leonardoService: LeonardoService, val proxyService: ProxySer
       put {
         entity(as[ClusterRequest]) { cluster =>
           complete {
-            leonardoService.createCluster(GoogleProject(googleProject), ClusterName(clusterName), cluster).map { cluster =>
-              StatusCodes.OK -> cluster
-            }
+            val httpResult = leonardoService.createCluster(GoogleProject(googleProject), ClusterName(clusterName), cluster)
+            HttpResult.toResponse(httpResult).unsafeToFuture()
           }
         }
       } ~

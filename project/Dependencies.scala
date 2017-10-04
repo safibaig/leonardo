@@ -30,6 +30,7 @@ object Dependencies {
   val swaggerUi: ModuleID =      "org.webjars"                %  "swagger-ui"      % "2.2.5"
   val ficus: ModuleID =          "com.iheart"                 %% "ficus"           % "1.4.0"
   val cats: ModuleID =           "org.typelevel"              %% "cats"            % "0.9.0"
+  val catsEffect: ModuleID =     "org.typelevel"              %% "cats-effect"     % "0.4"
 
   val akkaActor: ModuleID =         "com.typesafe.akka"   %%  "akka-actor"           % akkaV
   val akkaContrib: ModuleID =       "com.typesafe.akka"   %%  "akka-contrib"         % akkaV
@@ -70,6 +71,7 @@ object Dependencies {
     swaggerUi,
     ficus,
     cats,
+    catsEffect,
 
     akkaActor,
     akkaContrib,

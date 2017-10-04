@@ -2,6 +2,8 @@ package org.broadinstitute.dsde.workbench.leonardo.db
 
 import java.sql.SQLTimeoutException
 
+import cats.effect.IO
+import cats.Eval._
 import com.google.common.base.Throwables
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
@@ -13,6 +15,7 @@ import slick.basic.DatabaseConfig
 import slick.dbio.DBIO
 import slick.jdbc.{JdbcBackend, JdbcDataSource, JdbcProfile, TransactionIsolation}
 import net.ceedubs.ficus.Ficus._
+import org.broadinstitute.dsde.workbench.leonardo.{DbResult, TransactionDbResult}
 import sun.security.provider.certpath.SunCertPathBuilderException
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -64,6 +67,40 @@ case class DbReference(private val dbConfig: DatabaseConfig[JdbcProfile])(implic
     import dataAccess.profile.api._
     database.run(f(dataAccess).transactionally.withTransactionIsolation(isolationLevel))
   }
+
+
+  def dbResult[A](f: DataAccess => DBIO[A], isolationLevel: TransactionIsolation = TransactionIsolation.RepeatableRead): DbResult[A] = {
+    import dataAccess.profile.api._
+    DbResult((dataAccess: DataAccess) => IO.fromFuture(always(database.run(f(dataAccess).transactionally.withTransactionIsolation(isolationLevel)))).attempt)
+  }
+
+//  def inTransactionIO[T](f: (DataAccess) => DBIO[T], isolationLevel: TransactionIsolation = TransactionIsolation.RepeatableRead): IO[T] = {
+//    IO.fromFuture(always(inTransaction(f, isolationLevel)))
+//  }
+
+  import cats.data._
+  import cats.implicits._
+  import cats._
+
+//  def lift[A](f: DataAccess => DBIO[A]): TransactionDbResult[A] = {
+//
+//    import dataAccess.profile.api._
+//
+////    // DataACcess => IO[Either[Throwable, A]]
+////    val a = (da: DataAccess) => IO.fromFuture(always(database.run(f(da).transactionally))).attempt
+////
+////    // ReaderT[IO[Either[Throwable, ?]], DataAcess, A]
+////    type Foo[A] = IO[Either[Throwable, A]]
+////    val b = ReaderT[Foo, DataAccess, A](a)
+//
+//    // ReaderT[EitherT[IO, Throwable, ?], DataAccess, A]
+//    val a2 = (da: DataAccess) => IO.fromFuture(always(database.run(f(da).transactionally))).attemptT
+//    val c = ReaderT[DbResult, DataAccess, A](a2)
+//
+//    c
+//
+//
+//  }
 }
 
 class DataAccess(val profile: JdbcProfile)(implicit val executionContext: ExecutionContext) extends AllComponents {

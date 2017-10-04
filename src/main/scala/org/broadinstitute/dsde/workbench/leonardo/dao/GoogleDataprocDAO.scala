@@ -9,6 +9,7 @@ import akka.http.scaladsl.model.StatusCodes
 import cats.data.OptionT
 import cats.instances.future._
 import cats.syntax.functor._
+import cats.syntax.option._
 import com.google.api.client.auth.oauth2.Credential
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
