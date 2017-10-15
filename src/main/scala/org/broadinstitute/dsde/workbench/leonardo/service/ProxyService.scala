@@ -1,5 +1,7 @@
 package org.broadinstitute.dsde.workbench.leonardo.service
 
+import java.util.concurrent.TimeUnit
+
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Host
@@ -10,8 +12,10 @@ import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
 import akka.util.Timeout
+import com.google.common.cache.{CacheBuilder, CacheLoader}
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dsde.workbench.leonardo.config.ProxyConfig
+import org.broadinstitute.dsde.workbench.leonardo.dao.{DataprocDAO}
 import org.broadinstitute.dsde.workbench.leonardo.db.DbReference
 import org.broadinstitute.dsde.workbench.leonardo.dns.ClusterDnsCache._
 import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterName, GoogleProject, LeoException}
@@ -19,6 +23,7 @@ import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterName, GoogleProj
 import scala.collection.immutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Success
 
 case class ClusterNotReadyException(googleProject: GoogleProject, clusterName: ClusterName) extends LeoException(s"Cluster ${googleProject.string}/${clusterName.string} is not ready yet, chill out and try again later", StatusCodes.EnhanceYourCalm)
 case class ProxyException(googleProject: GoogleProject, clusterName: ClusterName) extends LeoException(s"Unable to proxy connection to Jupyter notebook on ${googleProject.string}/${clusterName.string}", StatusCodes.InternalServerError)
@@ -26,7 +31,27 @@ case class ProxyException(googleProject: GoogleProject, clusterName: ClusterName
 /**
   * Created by rtitle on 8/15/17.
   */
-class ProxyService(proxyConfig: ProxyConfig, dbRef: DbReference, clusterDnsCache: ActorRef)(implicit val system: ActorSystem, materializer: ActorMaterializer, executionContext: ExecutionContext) extends LazyLogging {
+class ProxyService(proxyConfig: ProxyConfig, gdDAO: DataprocDAO, dbRef: DbReference, clusterDnsCache: ActorRef)(implicit val system: ActorSystem, materializer: ActorMaterializer, executionContext: ExecutionContext) extends LazyLogging {
+
+
+  private lazy val cachedData = CacheBuilder.newBuilder()
+    .expireAfterWrite(60, TimeUnit.MINUTES)
+    .maximumSize(100)
+    .build(
+      new CacheLoader[String, String] {
+        def load(key: String) = {
+          gdDAO.getEmailFromAccessToken(key).onComplete {
+            case Success(userinfoplus) => userinfoplus.getEmail
+          }.toString
+        }
+      }
+    )
+
+  def getCachedEmailFromToken(accessToken: String): String = {
+    cachedData.get(accessToken)
+  }
+
+
 
   /**
     * Entry point to this class. Given a google project, cluster name, and HTTP request,

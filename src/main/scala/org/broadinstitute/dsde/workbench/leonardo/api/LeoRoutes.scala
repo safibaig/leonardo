@@ -1,27 +1,41 @@
 package org.broadinstitute.dsde.workbench.leonardo.api
 
+import java.util.concurrent.TimeUnit
+
 import akka.actor.ActorSystem
 import akka.event.Logging.LogLevel
 import akka.event.{Logging, LoggingAdapter}
 import akka.http.scaladsl.model._
-import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Directives.{path, _}
 import akka.http.scaladsl.server.RouteResult.Complete
 import akka.http.scaladsl.server.directives.{DebuggingDirectives, LogEntry, LoggingMagnet}
 import akka.http.scaladsl.server._
 import akka.stream.Materializer
 import akka.stream.scaladsl._
+import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
-import org.broadinstitute.dsde.workbench.leonardo.config.SwaggerConfig
+import net.ceedubs.ficus.Ficus._
+import org.broadinstitute.dsde.workbench.leonardo.config.{DataprocConfig, SwaggerConfig}
 import org.broadinstitute.dsde.workbench.leonardo.errorReportSource
 import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterName, ClusterRequest, GoogleProject, LeoException}
 import org.broadinstitute.dsde.workbench.leonardo.model.LeonardoJsonSupport._
 import org.broadinstitute.dsde.workbench.leonardo.service.{LeonardoService, ProxyService}
 import org.broadinstitute.dsde.workbench.model.ErrorReportJsonSupport._
 import org.broadinstitute.dsde.workbench.model.{ErrorReport, WorkbenchExceptionWithErrorReport}
+import com.google.common.cache.{CacheBuilder, CacheLoader}
 
 import scala.concurrent.{ExecutionContext, Future}
 
+case class AuthorizationError(email: String)
+  extends LeoException(s"'$email' is unauthorized", StatusCodes.Unauthorized)
+
+
 class LeoRoutes(val leonardoService: LeonardoService, val proxyService: ProxyService, val swaggerConfig: SwaggerConfig)(implicit val system: ActorSystem, val materializer: Materializer, val executionContext: ExecutionContext) extends LazyLogging with ProxyRoutes with SwaggerRoutes {
+
+  private val config = ConfigFactory.parseResources("leonardo.conf").withFallback(ConfigFactory.load())
+  private val whitelist = config.as[(List[String])]("whitelist")
+
+
 
   def unauthedRoutes: Route =
     path("ping") {
@@ -34,45 +48,101 @@ class LeoRoutes(val leonardoService: LeonardoService, val proxyService: ProxySer
       }
     }
 
-  def leoRoutes: Route =
-    path("cluster" / Segment / Segment) { (googleProject, clusterName) =>
-      put {
-        entity(as[ClusterRequest]) { cluster =>
+//  def leoRoutes: Route =
+//    path("cluster" / Segment / Segment) { (googleProject, clusterName) =>
+//      put {
+//        getUserEmail() { (userEmail, whitelisted) =>
+//          if (whitelisted) {
+//            entity(as[ClusterRequest]) { cluster =>
+//              complete {
+//                leonardoService.createCluster(GoogleProject(googleProject), ClusterName(clusterName), cluster).map { cluster =>
+//                  StatusCodes.OK -> cluster
+//                }
+//              }
+//            }
+//          } else throw AuthorizationError(userEmail)
+//
+//        }
+//      } ~
+//      get {
+//        complete {
+//          leonardoService.getActiveClusterDetails(GoogleProject(googleProject), ClusterName(clusterName)).map { clusterDetails =>
+//            StatusCodes.OK -> clusterDetails
+//          }
+//        }
+//      } ~
+//      delete {
+//        complete {
+//          leonardoService.deleteCluster(GoogleProject(googleProject), ClusterName(clusterName)).map { _ =>
+//            StatusCodes.Accepted
+//          }
+//        }
+//      }
+//    } ~
+//    path("clusters") {
+//      parameterMap { params =>
+//        complete {
+//          leonardoService.listClusters(params).map { clusters =>
+//            StatusCodes.OK -> clusters
+//          }
+//        }
+//      }
+//    }
+
+  def leoRoutes: Route = getUserEmail() { (userEmail, whitelisted) =>
+      path("cluster" / Segment / Segment) { (googleProject, clusterName) =>
+        put {
+          entity(as[ClusterRequest]) { cluster =>
+            logger.error("getUserEmail" + userEmail)
+            if (whitelisted) {
+              complete {
+                leonardoService.createCluster(GoogleProject(googleProject), ClusterName(clusterName), cluster).map { cluster =>
+                  StatusCodes.OK -> cluster
+                }
+              }
+            } else throw AuthorizationError(userEmail)
+          }
+        } ~
+          get {
+            complete {
+              leonardoService.getActiveClusterDetails(GoogleProject(googleProject), ClusterName(clusterName)).map { clusterDetails =>
+                StatusCodes.OK -> clusterDetails
+              }
+            }
+          } ~
+          delete {
+            complete {
+              leonardoService.deleteCluster(GoogleProject(googleProject), ClusterName(clusterName)).map { _ =>
+                StatusCodes.Accepted
+              }
+            }
+          }
+      } ~
+      path("clusters") {
+        parameterMap { params =>
           complete {
-            leonardoService.createCluster(GoogleProject(googleProject), ClusterName(clusterName), cluster).map { cluster =>
-              StatusCodes.OK -> cluster
+            leonardoService.listClusters(params).map { clusters =>
+              StatusCodes.OK -> clusters
             }
           }
         }
-      } ~
-      get {
-        complete {
-          leonardoService.getActiveClusterDetails(GoogleProject(googleProject), ClusterName(clusterName)). map { clusterDetails =>
-            StatusCodes.OK -> clusterDetails
-          }
-        }
-      } ~
-      delete {
-        complete {
-          leonardoService.deleteCluster(GoogleProject(googleProject), ClusterName(clusterName)).map { _ =>
-            StatusCodes.Accepted
-          }
-        }
-      }
-  } ~
-  path("clusters") {
-    parameterMap { params =>
-      complete {
-        leonardoService.listClusters(params).map { clusters =>
-          StatusCodes.OK -> clusters
-        }
       }
     }
-  }
+
 
   def route: Route = (logRequestResult & handleExceptions(myExceptionHandler) & handleRejections(rejectionHandler)) {
     swaggerRoutes ~ unauthedRoutes ~ proxyRoutes ~
     pathPrefix("api") { leoRoutes }
+  }
+
+  // WHITELIST STUFF - to be removed later
+  def getUserEmail(): Directive[(String, Boolean)] = {
+    def emailHeaderDirective: Directive1[String] = headerValueByName("OIDC_CLAIM_email")
+    for {
+      userEmail <- emailHeaderDirective
+    } yield {
+      logger.error("getUserEmail" + userEmail)
+      (userEmail, whitelist.contains(userEmail))}
   }
 
   private val myExceptionHandler = {

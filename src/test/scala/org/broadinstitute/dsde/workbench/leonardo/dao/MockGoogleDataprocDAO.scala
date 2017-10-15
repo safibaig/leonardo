@@ -3,10 +3,13 @@ package org.broadinstitute.dsde.workbench.leonardo.dao
 import java.io.File
 import java.util.UUID
 
+import com.google.api.services.oauth2.Oauth2.Builder
+import com.google.api.services.oauth2.model.Userinfoplus
 import org.broadinstitute.dsde.workbench.google.gcs.{GcsBucketName, GcsPath, GcsRelativePath}
 import org.broadinstitute.dsde.workbench.leonardo.config.{DataprocConfig, ProxyConfig}
 import org.broadinstitute.dsde.workbench.leonardo.model.ClusterStatus._
 import org.broadinstitute.dsde.workbench.leonardo.model._
+import org.broadinstitute.dsde.workbench.metrics.GoogleInstrumentedService
 
 import scala.collection.concurrent.TrieMap
 import scala.collection.mutable
@@ -22,6 +25,10 @@ class MockGoogleDataprocDAO(protected val dataprocConfig: DataprocConfig, protec
   val badClusterName = ClusterName("badCluster")
 
   private def googleID = UUID.randomUUID()
+
+  def getEmailFromAccessToken(accessToken: String)(implicit executionContext: ExecutionContext): Future[Userinfoplus] = {
+    Future{new Userinfoplus()}
+  }
 
   override def createCluster(googleProject: GoogleProject, clusterName: ClusterName, clusterRequest: ClusterRequest, bucketName: GcsBucketName)(implicit executionContext: ExecutionContext): Future[Cluster] = {
     if (clusterName == badClusterName) {

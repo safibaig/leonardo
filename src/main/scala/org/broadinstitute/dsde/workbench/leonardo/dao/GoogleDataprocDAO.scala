@@ -21,6 +21,8 @@ import com.google.api.services.compute.model.{Firewall, Instance}
 import com.google.api.services.compute.{Compute, ComputeScopes}
 import com.google.api.services.dataproc.Dataproc
 import com.google.api.services.dataproc.model.{Cluster => DataprocCluster, Operation => DataprocOperation, _}
+import com.google.api.services.oauth2.Oauth2.Builder
+import com.google.api.services.oauth2.model.Userinfoplus
 import com.google.api.services.plus.PlusScopes
 import com.google.api.services.storage.model.Bucket.Lifecycle
 import com.google.api.services.storage.model.Bucket.Lifecycle.Rule.{Action, Condition}
@@ -30,7 +32,7 @@ import org.broadinstitute.dsde.workbench.google.GoogleUtilities
 import org.broadinstitute.dsde.workbench.google.gcs.{GcsBucketName, GcsPath, GcsRelativePath}
 import org.broadinstitute.dsde.workbench.leonardo.config.{ClusterResourcesConfig, DataprocConfig, ProxyConfig}
 import org.broadinstitute.dsde.workbench.leonardo.model.ClusterStatus.{ClusterStatus => LeoClusterStatus}
-import org.broadinstitute.dsde.workbench.leonardo.model.{Cluster => LeoCluster, ClusterErrorDetails, ClusterName, ClusterRequest, FirewallRuleName, GoogleProject, IP, InstanceName, LeoException, OperationName, ZoneUri, ClusterStatus => LeoClusterStatus}
+import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterErrorDetails, ClusterName, ClusterRequest, FirewallRuleName, GoogleProject, IP, InstanceName, LeoException, OperationName, ZoneUri, Cluster => LeoCluster, ClusterStatus => LeoClusterStatus}
 import org.broadinstitute.dsde.workbench.metrics.GoogleInstrumentedService
 
 import scala.collection.JavaConverters._
@@ -72,6 +74,7 @@ class GoogleDataprocDAO(protected val dataprocConfig: DataprocConfig, protected 
       .setApplicationName(dataprocConfig.applicationName).build()
   }
 
+
   private def getServiceAccountCredential(scopes: List[String]): Credential = {
     new GoogleCredential.Builder()
       .setTransport(httpTransport)
@@ -84,6 +87,13 @@ class GoogleDataprocDAO(protected val dataprocConfig: DataprocConfig, protected 
 
   private def getOperationUUID(dop: DataprocOperation): UUID = {
     UUID.fromString(dop.getMetadata.get("clusterUuid").toString)
+  }
+
+  def getEmailFromAccessToken(accessToken: String)(implicit executionContext: ExecutionContext): Future[Userinfoplus] = {
+    implicit val service = GoogleInstrumentedService.Groups
+    val oauth2 = new Builder(httpTransport, jsonFactory, null).setApplicationName(dataprocConfig.applicationName).build()
+    val request = oauth2.userinfo().get().setOauthToken(accessToken)
+    executeGoogleRequestAsync(GoogleProject(""), "", request)
   }
 
   private lazy val googleFirewallRule = {
