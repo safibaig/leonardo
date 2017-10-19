@@ -20,7 +20,7 @@ import com.google.api.services.compute.model.Firewall.Allowed
 import com.google.api.services.compute.model.{Firewall, Instance}
 import com.google.api.services.compute.{Compute, ComputeScopes}
 import com.google.api.services.dataproc.Dataproc
-import com.google.api.services.dataproc.model.{Cluster => DataprocCluster, Operation => DataprocOperation, _}
+import com.google.api.services.dataproc.model.{NodeInitializationAction, Cluster => DataprocCluster, Operation => DataprocOperation, _}
 import com.google.api.services.oauth2.Oauth2Scopes
 import com.google.api.services.plus.PlusScopes
 import com.google.api.services.storage.model.Bucket.Lifecycle
@@ -31,7 +31,7 @@ import org.broadinstitute.dsde.workbench.google.GoogleUtilities
 import org.broadinstitute.dsde.workbench.google.gcs.{GcsBucketName, GcsPath, GcsRelativePath}
 import org.broadinstitute.dsde.workbench.leonardo.config.{ClusterResourcesConfig, DataprocConfig, ProxyConfig}
 import org.broadinstitute.dsde.workbench.leonardo.model.ClusterStatus.{ClusterStatus => LeoClusterStatus}
-import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterErrorDetails, ClusterName, ClusterRequest, FirewallRuleName, GoogleProject, IP, InstanceName, LeoException, OperationName, ZoneUri, Cluster => LeoCluster, ClusterStatus => LeoClusterStatus}
+import org.broadinstitute.dsde.workbench.leonardo.model.{ClusterErrorDetails, ClusterMode, ClusterName, ClusterRequest, FirewallRuleName, GoogleProject, IP, InstanceName, LeoException, OperationName, ZoneUri, Cluster => LeoCluster, ClusterStatus => LeoClusterStatus}
 import org.broadinstitute.dsde.workbench.metrics.GoogleInstrumentedService
 
 import scala.collection.JavaConverters._
@@ -43,6 +43,9 @@ case class CallToGoogleApiFailedException(googleProject: GoogleProject, context:
 
 case class FirewallRuleNotFoundException(googleProject: GoogleProject, firewallRuleName: FirewallRuleName)
   extends LeoException(s"Firewall rule ${firewallRuleName.string} not found in project ${googleProject.string}", StatusCodes.NotFound)
+
+case class TooFewWorkersRequestedException(numberofWorkers: Int)
+  extends LeoException(s"$numberofWorkers workers requested. A Standard cluster must have 2 or more workers.", StatusCodes.NotFound)
 
 class GoogleDataprocDAO(protected val dataprocConfig: DataprocConfig, protected val proxyConfig: ProxyConfig, protected val clusterResourcesConfig: ClusterResourcesConfig)(implicit val system: ActorSystem, val executionContext: ExecutionContext)
   extends DataprocDAO with GoogleUtilities {
@@ -120,23 +123,35 @@ class GoogleDataprocDAO(protected val dataprocConfig: DataprocConfig, protected 
     //    This executable is our init-actions.sh, which will stand up our jupyter server and proxy.
     val initActions = Seq(new NodeInitializationAction().setExecutableFile(GcsPath(bucketName, GcsRelativePath(clusterResourcesConfig.initActionsScript)).toUri))
 
-    // Create a SoftwareConfig and set a property that makes the cluster have only one node
-    val softwareConfig = new SoftwareConfig().setProperties(Map("dataproc:dataproc.allow.zero.workers" -> "true").asJava)
-
-    // Create a Cluster Config and give it the GceClusterConfig, the NodeInitializationAction and the SoftwareConfig
-    val clusterConfig = new ClusterConfig()
-      .setGceClusterConfig(gce)
-      .setInitializationActions(initActions.asJava).setSoftwareConfig(softwareConfig)
-
     // Create a Cluster and give it a name and a Cluster Config
     val cluster = new DataprocCluster()
       .setClusterName(clusterName.string)
-      .setConfig(clusterConfig)
+      .setConfig(setClusterConfig(gce, initActions, clusterRequest))
 
     // Create a dataproc create request and give it the google project, a zone, and the Cluster
     val request = dataproc.projects().regions().clusters().create(googleProject.string, dataprocConfig.dataprocDefaultRegion, cluster)
 
     executeGoogleRequestAsync(googleProject, clusterName.toString, request)  // returns a Future[DataprocOperation]
+  }
+
+  private def setClusterConfig(gceClusterConfig: GceClusterConfig, initActions: Seq[NodeInitializationAction], clusterRequest: ClusterRequest): ClusterConfig = {
+    // Create a Cluster Config and give it the GceClusterConfig, the NodeInitializationAction and the SoftwareConfig
+    val clusterConfig = new ClusterConfig()
+      .setGceClusterConfig(gceClusterConfig)
+      .setInitializationActions(initActions.asJava)
+
+    if (clusterRequest.clusterMode == ClusterMode.SingleNode) {
+      // Create a SoftwareConfig and set a property that makes the cluster have only one node
+      val softwareConfig = new SoftwareConfig().setProperties(Map("dataproc:dataproc.allow.zero.workers" -> "true").asJava)
+      clusterConfig.setSoftwareConfig(softwareConfig)
+    } else {
+      val numberOfWorkers = clusterRequest.numberOfWorkers match {
+        case Some(workers) if workers < 2 => throw TooFewWorkersRequestedException(workers)
+        case Some(workers) => workers
+        case None => 2
+      }
+      clusterConfig.setWorkerConfig(new InstanceGroupConfig().setNumInstances(numberOfWorkers))
+    }
   }
 
   /* Check if the given google project has a cluster firewall rule. If not, add the rule to the project*/

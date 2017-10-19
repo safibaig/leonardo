@@ -25,7 +25,7 @@ class LeonardoServiceSpec extends TestKit(ActorSystem("leonardotest")) with Flat
   private val serviceAccount = GoogleServiceAccount("service-account")
   private val googleProject = GoogleProject("test-google-project")
   private val clusterName = ClusterName("test-cluster")
-  private lazy val testClusterRequest = ClusterRequest(bucketPath, serviceAccount, Map("bam" -> "yes", "vcf" -> "no", "foo" -> "bar"), Some(gdDAO.extensionPath))
+  private lazy val testClusterRequest = ClusterRequest(bucketPath, serviceAccount, ClusterMode.SingleNode, None, Map("bam" -> "yes", "vcf" -> "no", "foo" -> "bar"), Some(gdDAO.extensionPath))
 
   private var gdDAO: MockGoogleDataprocDAO = _
   private var leo: LeonardoService = _
